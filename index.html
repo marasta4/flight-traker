@@ -438,7 +438,7 @@ async function fetchFlights() {
   const deg = radiusKm/111;
   const lamin=(userLat-deg).toFixed(4), lamax=(userLat+deg).toFixed(4);
   const lomin=(userLon-deg/Math.cos(userLat*Math.PI/180)).toFixed(4), lomax=(userLon+deg/Math.cos(userLat*Math.PI/180)).toFixed(4);
-  const url=`https://opensky-network.org/api/states/all?lamin=${lamin}&lomin=${lomin}&lamax=${lamax}&lomax=${lomax}`;
+  const url=`https://corsproxy.io/?https://opensky-network.org/api/states/all?lamin=${lamin}&lomin=${lomin}&lamax=${lamax}&lomax=${lomax}`;
   document.getElementById('live-badge').textContent='aggiornamento…';
   document.getElementById('live-badge').className='badge badge-wait';
   try {
