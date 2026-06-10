@@ -433,31 +433,47 @@ function startCountdown(sec) {
   }, 1000);
 }
 
+// ============================================================
+// CONFIGURAZIONE PROXY
+// Dopo aver deployato il worker.js su Cloudflare Workers,
+// sostituisci l'URL qui sotto con il tuo URL worker.
+// Es: 'https://proud-firefly-d284.marastoni93.workers.dev'
+// ============================================================
+const WORKER_URL = 'https://proud-firefly-d284.marastoni93.workers.dev';
+
 async function fetchFlights() {
   if (!positionSet) return;
   const deg = radiusKm/111;
   const lamin=(userLat-deg).toFixed(4), lamax=(userLat+deg).toFixed(4);
   const lomin=(userLon-deg/Math.cos(userLat*Math.PI/180)).toFixed(4), lomax=(userLon+deg/Math.cos(userLat*Math.PI/180)).toFixed(4);
-  const baseUrl=`https://opensky-network.org/api/states/all?lamin=${lamin}&lomin=${lomin}&lamax=${lamax}&lomax=${lomax}`;
+
+  // Prova prima il Worker Cloudflare, poi fallback ai proxy pubblici
+  const params = `lamin=${lamin}&lomin=${lomin}&lamax=${lamax}&lomax=${lomax}`;
+  const baseOpenSky = `https://opensky-network.org/api/states/all?${params}`;
   const proxies = [
-    `https://corsproxy.io/?${encodeURIComponent(baseUrl)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(baseUrl)}`,
-    `https://cors-anywhere.herokuapp.com/${baseUrl}`,
-    baseUrl
+    `${WORKER_URL}?${params}`,
+    `https://corsproxy.io/?${encodeURIComponent(baseOpenSky)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(baseOpenSky)}`,
   ];
+
   document.getElementById('live-badge').textContent='aggiornamento…';
   document.getElementById('live-badge').className='badge badge-wait';
+
   let data = null;
+  let lastError = '';
   for (const url of proxies) {
     try {
-      const res = await fetch(url, {signal: AbortSignal.timeout(10000)});
-      if (!res.ok) continue;
-      data = await res.json();
+      const res = await fetch(url, {signal: AbortSignal.timeout(12000)});
+      if (!res.ok) { lastError = 'HTTP '+res.status; continue; }
+      const text = await res.text();
+      if (!text || text.includes('allowlist')) { lastError = 'Bloccato'; continue; }
+      data = JSON.parse(text);
       if (data) break;
-    } catch(e) { continue; }
+    } catch(e) { lastError = e.message; continue; }
   }
+
   try {
-    if (!data) throw new Error('Tutti i proxy hanno fallito');
+    if (!data) throw new Error(lastError || 'Tutti i proxy hanno fallito');
     const fields=['icao24','callsign','origin_country','time_position','last_contact','longitude','latitude','baro_altitude','on_ground','velocity','true_track','vertical_rate','sensors','geo_altitude','squawk','spi','position_source'];
     flights = (data.states||[]).map(s=>{const o={};fields.forEach((f,i)=>o[f]=s[i]);return o;}).filter(f=>f.latitude&&f.longitude&&!f.on_ground);
     updateStats();
