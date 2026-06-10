@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Sky Tracker — Aerei in tempo reale</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#ffffff;--bg2:#f5f5f5;--bg3:#ebebeb;
+  --text:#111;--text2:#666;--text3:#999;
+  --border:rgba(0,0,0,0.12);--border2:rgba(0,0,0,0.22);
+  --blue:#378add;--green:#3b6d11;--red:#a32d2d;--amber:#854f0b;
+  --radius:8px;--radius-lg:12px;
+  --font:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#1a1a1a;--bg2:#242424;--bg3:#2e2e2e;
+    --text:#f0f0f0;--text2:#aaa;--text3:#666;
+    --border:rgba(255,255,255,0.1);--border2:rgba(255,255,255,0.2);
+    --blue:#5b9bd5;--green:#81c784;--red:#e57373;--amber:#ffb74d;
+  }
+}
+html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--text)}
+body{display:flex;flex-direction:column}
+
+/* TOPBAR */
+#topbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px 16px;border-bottom:0.5px solid var(--border);background:var(--bg)}
+.topbar-left{display:flex;align-items:center;gap:10px}
+.topbar-left h1{font-size:17px;font-weight:500}
+.badge{font-size:11px;padding:2px 9px;border-radius:20px;font-weight:500;border:0.5px solid}
+.badge-live{background:#e9fbe9;color:#2e7d32;border-color:#a5d6a7}
+.badge-wait{background:var(--bg2);color:var(--text2);border-color:var(--border)}
+.badge-err{background:#fcebeb;color:#a32d2d;border-color:#f09595}
+.topbar-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.topbar-right label{font-size:12px;color:var(--text2)}
+select{font-size:12px;padding:5px 8px;border-radius:var(--radius);border:0.5px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer}
+button{font-size:12px;padding:5px 12px;border-radius:var(--radius);border:0.5px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+button:hover{background:var(--bg2)}
+.countdown{font-size:12px;color:var(--text2);min-width:90px;text-align:right}
+
+/* STATS */
+#stats-row{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;padding:10px 16px;border-bottom:0.5px solid var(--border)}
+.sc{background:var(--bg2);border-radius:var(--radius);padding:8px 12px}
+.sc-label{font-size:11px;color:var(--text2);margin-bottom:2px}
+.sc-val{font-size:20px;font-weight:500}
+
+/* MAIN */
+#main{display:grid;grid-template-columns:1fr 280px;gap:10px;padding:10px 16px;flex:1;min-height:0}
+#map-wrap{border-radius:var(--radius-lg);border:0.5px solid var(--border);overflow:hidden;min-height:380px}
+#map{width:100%;height:100%}
+.side-panel{display:flex;flex-direction:column;gap:10px;overflow:hidden}
+.panel-card{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:12px;overflow:auto}
+.panel-title{font-size:12px;font-weight:500;color:var(--text2);margin-bottom:10px;display:flex;align-items:center;gap:5px}
+
+/* DETAIL */
+.detail-row{display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:0.5px solid var(--border)}
+.detail-row:last-child{border-bottom:none}
+.detail-label{color:var(--text2)}
+.detail-val{font-weight:500;font-family:monospace;font-size:11px}
+.ext-link{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--blue);margin-top:8px;text-decoration:none}
+.ext-link:hover{text-decoration:underline}
+
+/* RANKING */
+.ranking-list{list-style:none;font-size:12px}
+.ranking-list li{display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:0.5px solid var(--border)}
+.ranking-list li:last-child{border-bottom:none}
+.rank-num{font-size:10px;font-weight:500;color:var(--text2);min-width:14px}
+.rank-call{font-family:monospace;font-weight:500;font-size:11px;flex:1}
+.rank-bar-wrap{width:55px;background:var(--bg3);border-radius:3px;height:5px}
+.rank-bar{height:5px;border-radius:3px;background:var(--blue)}
+.rank-count{font-size:11px;color:var(--text2);min-width:24px;text-align:right}
+
+/* BOTTOM CHARTS */
+#bottom{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:0 16px 10px}
+.chart-card{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:12px}
+.chart-title{font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:5px}
+
+/* FLIGHT TABLE */
+#table-section{padding:0 16px 16px}
+.section-title{font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:5px}
+.table-wrap{overflow-x:auto;border:0.5px solid var(--border);border-radius:var(--radius-lg)}
+table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
+th{text-align:left;font-weight:500;color:var(--text2);padding:6px 8px;border-bottom:0.5px solid var(--border);font-size:11px;background:var(--bg2)}
+td{padding:6px 8px;border-bottom:0.5px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--bg2);cursor:pointer}
+.cs{font-family:monospace;font-size:11px;font-weight:500}
+.alt-col{color:var(--blue)}
+.spd-col{color:var(--green)}
+
+/* FULLSCREEN TOGGLE */
+#fs-btn{position:fixed;bottom:16px;right:16px;background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--radius-lg);padding:8px 14px;font-size:12px;cursor:pointer;z-index:1000;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.12)}
+#fs-btn:hover{background:var(--bg2)}
+
+@media(max-width:800px){
+  #stats-row{grid-template-columns:repeat(3,1fr)}
+  #main{grid-template-columns:1fr}
+  .side-panel{flex-direction:row;flex-wrap:wrap}
+  .panel-card{flex:1;min-width:200px}
+  #bottom{grid-template-columns:1fr 1fr}
+}
+@media(max-width:500px){
+  #stats-row{grid-template-columns:repeat(2,1fr)}
+  #bottom{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div class="topbar-left">
+    <i class="ti ti-plane" style="font-size:20px;color:var(--blue)"></i>
+    <h1>Sky Tracker</h1>
+    <span class="badge badge-wait" id="live-badge">in attesa</span>
+  </div>
+  <div class="topbar-right">
+    <label>Raggio</label>
+    <select id="radius-sel">
+      <option value="50">50 km</option>
+      <option value="100" selected>100 km</option>
+      <option value="150">150 km</option>
+      <option value="200">200 km</option>
+    </select>
+    <label>Storico</label>
+    <select id="hist-sel">
+      <option value="15">15 min</option>
+      <option value="30" selected>30 min</option>
+      <option value="60">1 ora</option>
+      <option value="180">3 ore</option>
+    </select>
+    <button id="locbtn"><i class="ti ti-current-location" style="font-size:14px"></i> La mia posizione</button>
+    <button id="refreshbtn"><i class="ti ti-refresh" style="font-size:14px"></i> Aggiorna</button>
+    <span class="countdown" id="countdown"></span>
+  </div>
+</div>
+
+<div id="stats-row">
+  <div class="sc"><div class="sc-label">Aerei in volo</div><div class="sc-val" id="st-count">—</div></div>
+  <div class="sc"><div class="sc-label">Quota media</div><div class="sc-val" id="st-alt">—</div></div>
+  <div class="sc"><div class="sc-label">Velocità media</div><div class="sc-val" id="st-spd">—</div></div>
+  <div class="sc"><div class="sc-label">Paesi rilevati</div><div class="sc-val" id="st-ctry">—</div></div>
+  <div class="sc"><div class="sc-label">Aerei (storico)</div><div class="sc-val" id="st-hist">—</div></div>
+</div>
+
+<div id="main">
+  <div id="map-wrap"><div id="map"></div></div>
+  <div class="side-panel">
+    <div class="panel-card">
+      <div class="panel-title"><i class="ti ti-info-circle" style="font-size:14px"></i> Dettaglio volo</div>
+      <div id="detail-content"><p style="font-size:12px;color:var(--text2)">Clicca su un aereo sulla mappa</p></div>
+    </div>
+    <div class="panel-card">
+      <div class="panel-title"><i class="ti ti-trophy" style="font-size:14px"></i> Classifica storica</div>
+      <ul class="ranking-list" id="ranking-list">
+        <li><span style="font-size:12px;color:var(--text2)">Avvia il tracker per popolare</span></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div id="bottom">
+  <div class="chart-card">
+    <div class="chart-title"><i class="ti ti-chart-bar" style="font-size:13px"></i> Distribuzione altitudini</div>
+    <div style="position:relative;height:150px">
+      <canvas id="altChart" role="img" aria-label="Distribuzione altitudini aerei">Grafico altitudini</canvas>
+    </div>
+  </div>
+  <div class="chart-card">
+    <div class="chart-title"><i class="ti ti-chart-donut" style="font-size:13px"></i> Paesi di origine</div>
+    <div style="position:relative;height:120px">
+      <canvas id="ctryChart" role="img" aria-label="Paesi di origine aerei">Grafico paesi</canvas>
+    </div>
+    <div id="ctry-legend" style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;font-size:10px;color:var(--text2)"></div>
+  </div>
+  <div class="chart-card">
+    <div class="chart-title"><i class="ti ti-chart-line" style="font-size:13px"></i> Aerei nel tempo</div>
+    <div style="position:relative;height:150px">
+      <canvas id="timeChart" role="img" aria-label="Numero aerei nel tempo">Grafico temporale</canvas>
+    </div>
+  </div>
+</div>
+
+<div id="table-section">
+  <div class="section-title"><i class="ti ti-list" style="font-size:13px"></i> Lista voli in tempo reale</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th style="width:90px">Volo</th>
+        <th style="width:130px">Paese</th>
+        <th style="width:75px">Quota</th>
+        <th style="width:90px">Velocità</th>
+        <th style="width:55px">Rotta</th>
+        <th style="width:80px">Distanza</th>
+      </tr></thead>
+      <tbody id="ftbody">
+        <tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text2)">Clicca "La mia posizione" per iniziare</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<button id="fs-btn"><i class="ti ti-maximize" style="font-size:14px"></i> Schermo intero</button>
+
+<script>
+let map, markersLayer, radiusCircle;
+let flights = [], userLat = 45.4064, userLon = 11.8768, radiusKm = 100;
+let positionSet = false;
+let autoTimer = null, countdownVal = 0, countdownTimer = null;
+let altChart, ctryChart, timeChart;
+let histMinutes = 30;
+let historyLog = {};
+let timeSeriesData = [];
+let selectedIcao = null;
+
+const CTRY_COLORS = ['#378add','#1D9E75','#D85A30','#D4537E','#7F77DD','#BA7517','#E24B4A','#639922','#888780'];
+
+function initMap() {
+  map = L.map('map', {zoomControl:true}).setView([userLat, userLon], 8);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom:18
+  }).addTo(map);
+  markersLayer = L.layerGroup().addTo(map);
+  radiusCircle = L.circle([userLat, userLon], {
+    radius: radiusKm*1000, color:'#378add', weight:1.5, fillOpacity:0.04, dashArray:'6,4'
+  }).addTo(map);
+}
+
+function planeIcon(track, alt) {
+  const color = !alt||alt<0?'#aaa':alt<3000?'#e57373':alt<8000?'#ffb74d':alt<12000?'#4caf50':'#378add';
+  const r = track || 0;
+  return L.divIcon({
+    className:'',
+    html:`<svg width="22" height="22" viewBox="0 0 22 22" style="transform:rotate(${r}deg);overflow:visible">
+      <polygon points="11,1 14,18 11,15 8,18" fill="${color}" stroke="rgba(0,0,0,0.4)" stroke-width="1"/>
+    </svg>`,
+    iconSize:[22,22], iconAnchor:[11,11]
+  });
+}
+
+function haversine(lat1,lon1,lat2,lon2) {
+  const R=6371, dLat=(lat2-lat1)*Math.PI/180, dLon=(lon2-lon1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+function renderMarkers() {
+  markersLayer.clearLayers();
+  flights.forEach(f => {
+    if (!f.latitude||!f.longitude) return;
+    const mk = L.marker([f.latitude, f.longitude], {icon: planeIcon(f.true_track, f.baro_altitude||0)});
+    const cs = (f.callsign||f.icao24||'???').trim();
+    mk.bindTooltip(
+      `<b style="font-family:monospace">${cs}</b><br>${f.origin_country||'—'}<br>${f.baro_altitude?Math.round(f.baro_altitude)+' m':'—'}`,
+      {direction:'top', offset:[0,-8]}
+    );
+    mk.on('click', () => showDetail(f.icao24));
+    markersLayer.addLayer(mk);
+  });
+}
+
+function showDetail(icao) {
+  selectedIcao = icao;
+  const f = flights.find(x => x.icao24 === icao);
+  if (!f) return;
+  const cs = (f.callsign||f.icao24||'???').trim();
+  const dist = f.latitude ? Math.round(haversine(userLat,userLon,f.latitude,f.longitude)) : '—';
+  const rows = [
+    ['ICAO24', f.icao24||'—'],
+    ['Callsign', cs],
+    ['Paese', f.origin_country||'—'],
+    ['Quota baro.', f.baro_altitude?Math.round(f.baro_altitude)+' m':'—'],
+    ['Quota geo.', f.geo_altitude?Math.round(f.geo_altitude)+' m':'—'],
+    ['Velocità', f.velocity?Math.round(f.velocity*3.6)+' km/h':'—'],
+    ['Rotta', f.true_track!==null?Math.round(f.true_track)+'°':'—'],
+    ['Variaz. quota', f.vertical_rate?Math.round(f.vertical_rate)+' m/s':'—'],
+    ['Squawk', f.squawk||'—'],
+    ['Distanza', dist!=='—'?dist+' km':'—'],
+  ];
+  let html = rows.map(([l,v]) =>
+    `<div class="detail-row"><span class="detail-label">${l}</span><span class="detail-val">${v}</span></div>`
+  ).join('');
+  html += `<div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+    <a class="ext-link" href="https://www.flightradar24.com/${cs}" target="_blank" rel="noopener">
+      <i class="ti ti-external-link" style="font-size:12px"></i> FlightRadar24
+    </a>
+    <a class="ext-link" href="https://flightaware.com/live/flight/${cs}" target="_blank" rel="noopener">
+      <i class="ti ti-external-link" style="font-size:12px"></i> FlightAware
+    </a>
+  </div>`;
+  document.getElementById('detail-content').innerHTML = html;
+}
+
+function updateStats() {
+  document.getElementById('st-count').textContent = flights.length;
+  const alts = flights.filter(f=>f.baro_altitude>0).map(f=>f.baro_altitude);
+  const spds = flights.filter(f=>f.velocity>0).map(f=>f.velocity);
+  document.getElementById('st-alt').textContent = alts.length ? Math.round(alts.reduce((a,b)=>a+b)/alts.length)+'m' : '—';
+  document.getElementById('st-spd').textContent = spds.length ? Math.round(spds.reduce((a,b)=>a+b)/spds.length*3.6)+' km/h' : '—';
+  const countries = [...new Set(flights.map(f=>f.origin_country).filter(Boolean))];
+  document.getElementById('st-ctry').textContent = countries.length || '—';
+}
+
+function updateHistory(newFlights) {
+  const now = Date.now();
+  const cutoff = now - histMinutes * 60 * 1000;
+  newFlights.forEach(f => {
+    const key = (f.callsign||f.icao24||'???').trim();
+    if (!historyLog[key]) historyLog[key] = [];
+    historyLog[key].push(now);
+  });
+  Object.keys(historyLog).forEach(k => {
+    historyLog[k] = historyLog[k].filter(t => t > cutoff);
+    if (!historyLog[k].length) delete historyLog[k];
+  });
+  document.getElementById('st-hist').textContent = Object.keys(historyLog).length;
+  renderRanking();
+}
+
+function renderRanking() {
+  const sorted = Object.entries(historyLog)
+    .map(([k,v])=>({cs:k,count:v.length}))
+    .sort((a,b)=>b.count-a.count).slice(0,8);
+  if (!sorted.length) return;
+  const max = sorted[0].count || 1;
+  document.getElementById('ranking-list').innerHTML = sorted.map((s,i) => `
+    <li>
+      <span class="rank-num">${i+1}</span>
+      <span class="rank-call">${s.cs}</span>
+      <div class="rank-bar-wrap"><div class="rank-bar" style="width:${Math.round(s.count/max*100)}%"></div></div>
+      <span class="rank-count">${s.count}x</span>
+    </li>`).join('');
+}
+
+function updateCharts() {
+  const isDark = matchMedia('(prefers-color-scheme:dark)').matches;
+  const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+  const tickColor = isDark ? '#aaa' : '#666';
+
+  const bins = ['0–3k','3–8k','8–12k','12k+'];
+  const bc = [0,0,0,0];
+  flights.forEach(f => {
+    const a=f.baro_altitude||0;
+    if(a<3000)bc[0]++; else if(a<8000)bc[1]++; else if(a<12000)bc[2]++; else bc[3]++;
+  });
+  if (!altChart) {
+    altChart = new Chart(document.getElementById('altChart'), {
+      type:'bar',
+      data:{labels:bins,datasets:[{data:bc,backgroundColor:['#e57373','#ffb74d','#4caf50','#378add'],borderWidth:0}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+        scales:{x:{ticks:{font:{size:10},color:tickColor},grid:{color:gridColor}},
+                y:{ticks:{font:{size:10},color:tickColor},beginAtZero:true,grid:{color:gridColor}}}}
+    });
+  } else {
+    altChart.data.datasets[0].data = bc;
+    altChart.update();
+  }
+
+  const cmap = {};
+  flights.forEach(f => { if(f.origin_country) cmap[f.origin_country]=(cmap[f.origin_country]||0)+1; });
+  const entries = Object.entries(cmap).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const cl = entries.map(e=>e[0]), cd = entries.map(e=>e[1]), cc = CTRY_COLORS.slice(0,cl.length);
+  if (!ctryChart) {
+    ctryChart = new Chart(document.getElementById('ctryChart'), {
+      type:'doughnut',
+      data:{labels:cl,datasets:[{data:cd,backgroundColor:cc,borderWidth:1,borderColor:isDark?'#1a1a1a':'#fff'}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},cutout:'60%'}
+    });
+  } else {
+    ctryChart.data.labels = cl;
+    ctryChart.data.datasets[0].data = cd;
+    ctryChart.data.datasets[0].backgroundColor = cc;
+    ctryChart.update();
+  }
+  document.getElementById('ctry-legend').innerHTML = cl.map((l,i)=>
+    `<span style="display:flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:${cc[i]}"></span>${l}</span>`
+  ).join('');
+
+  const now = Date.now();
+  timeSeriesData.push({t:new Date(now).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),v:flights.length});
+  if (timeSeriesData.length > 20) timeSeriesData.shift();
+  if (!timeChart) {
+    timeChart = new Chart(document.getElementById('timeChart'), {
+      type:'line',
+      data:{labels:timeSeriesData.map(d=>d.t),datasets:[{data:timeSeriesData.map(d=>d.v),borderColor:'#378add',backgroundColor:'rgba(55,138,221,0.08)',borderWidth:1.5,pointRadius:2,tension:0.3,fill:true}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+        scales:{x:{ticks:{font:{size:9},color:tickColor,maxRotation:0,autoSkip:true,maxTicksLimit:5},grid:{color:gridColor}},
+                y:{ticks:{font:{size:10},color:tickColor},beginAtZero:true,grid:{color:gridColor}}}}
+    });
+  } else {
+    timeChart.data.labels = timeSeriesData.map(d=>d.t);
+    timeChart.data.datasets[0].data = timeSeriesData.map(d=>d.v);
+    timeChart.update();
+  }
+}
+
+function renderTable() {
+  const tb = document.getElementById('ftbody');
+  if (!flights.length) {
+    tb.innerHTML='<tr><td colspan="6" style="text-align:center;padding:16px;color:var(--text2)">Nessun aereo rilevato</td></tr>';
+    return;
+  }
+  const sorted = [...flights].sort((a,b)=>(b.baro_altitude||0)-(a.baro_altitude||0));
+  tb.innerHTML = sorted.slice(0,40).map(f => {
+    const cs=(f.callsign||f.icao24||'???').trim();
+    const dist=f.latitude?Math.round(haversine(userLat,userLon,f.latitude,f.longitude))+' km':'—';
+    return `<tr onclick="showDetail('${f.icao24}')">
+      <td class="cs">${cs}</td>
+      <td>${f.origin_country||'—'}</td>
+      <td class="alt-col">${f.baro_altitude?Math.round(f.baro_altitude)+' m':'—'}</td>
+      <td class="spd-col">${f.velocity?Math.round(f.velocity*3.6)+' km/h':'—'}</td>
+      <td>${f.true_track!==null?Math.round(f.true_track)+'°':'—'}</td>
+      <td>${dist}</td>
+    </tr>`;
+  }).join('');
+}
+
+function startCountdown(sec) {
+  clearInterval(countdownTimer);
+  countdownVal = sec;
+  const el = document.getElementById('countdown');
+  el.textContent = `prossimo: ${countdownVal}s`;
+  countdownTimer = setInterval(() => {
+    countdownVal--;
+    if (countdownVal <= 0) { el.textContent=''; clearInterval(countdownTimer); }
+    else el.textContent = `prossimo: ${countdownVal}s`;
+  }, 1000);
+}
+
+async function fetchFlights() {
+  if (!positionSet) return;
+  const deg = radiusKm/111;
+  const lamin=(userLat-deg).toFixed(4), lamax=(userLat+deg).toFixed(4);
+  const lomin=(userLon-deg/Math.cos(userLat*Math.PI/180)).toFixed(4), lomax=(userLon+deg/Math.cos(userLat*Math.PI/180)).toFixed(4);
+  const url=`https://opensky-network.org/api/states/all?lamin=${lamin}&lomin=${lomin}&lamax=${lamax}&lomax=${lomax}`;
+  document.getElementById('live-badge').textContent='aggiornamento…';
+  document.getElementById('live-badge').className='badge badge-wait';
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP '+res.status);
+    const data = await res.json();
+    const fields=['icao24','callsign','origin_country','time_position','last_contact','longitude','latitude','baro_altitude','on_ground','velocity','true_track','vertical_rate','sensors','geo_altitude','squawk','spi','position_source'];
+    flights = (data.states||[]).map(s=>{const o={};fields.forEach((f,i)=>o[f]=s[i]);return o;}).filter(f=>f.latitude&&f.longitude&&!f.on_ground);
+    updateStats();
+    renderMarkers();
+    updateCharts();
+    updateHistory(flights);
+    renderTable();
+    if (selectedIcao) showDetail(selectedIcao);
+    document.getElementById('live-badge').textContent='live';
+    document.getElementById('live-badge').className='badge badge-live';
+    clearTimeout(autoTimer);
+    autoTimer = setTimeout(fetchFlights, 60000);
+    startCountdown(60);
+  } catch(e) {
+    document.getElementById('live-badge').textContent='errore — riprovo in 90s';
+    document.getElementById('live-badge').className='badge badge-err';
+    clearTimeout(autoTimer);
+    autoTimer = setTimeout(fetchFlights, 90000);
+    startCountdown(90);
+  }
+}
+
+function updateRadius() {
+  radiusKm = parseInt(document.getElementById('radius-sel').value);
+  if (radiusCircle) { map.removeLayer(radiusCircle); }
+  radiusCircle = L.circle([userLat, userLon], {radius:radiusKm*1000,color:'#378add',weight:1.5,fillOpacity:0.04,dashArray:'6,4'}).addTo(map);
+  if (positionSet) { clearTimeout(autoTimer); fetchFlights(); }
+}
+
+document.getElementById('radius-sel').addEventListener('change', updateRadius);
+document.getElementById('hist-sel').addEventListener('change', e => {
+  histMinutes = parseInt(e.target.value);
+  historyLog = {};
+  document.getElementById('st-hist').textContent = '—';
+  document.getElementById('ranking-list').innerHTML = '<li><span style="font-size:12px;color:var(--text2)">Storico azzerato…</span></li>';
+});
+document.getElementById('refreshbtn').addEventListener('click', () => { clearTimeout(autoTimer); fetchFlights(); });
+document.getElementById('locbtn').addEventListener('click', () => {
+  if (!navigator.geolocation) { alert('Geolocalizzazione non supportata dal browser'); return; }
+  document.getElementById('live-badge').textContent='GPS…';
+  document.getElementById('live-badge').className='badge badge-wait';
+  navigator.geolocation.getCurrentPosition(pos => {
+    userLat = pos.coords.latitude;
+    userLon = pos.coords.longitude;
+    positionSet = true;
+    map.setView([userLat, userLon], 8);
+    if (radiusCircle) map.removeLayer(radiusCircle);
+    radiusCircle = L.circle([userLat, userLon], {radius:radiusKm*1000,color:'#378add',weight:1.5,fillOpacity:0.04,dashArray:'6,4'}).addTo(map);
+    L.marker([userLat, userLon], {
+      icon: L.divIcon({className:'',html:'<div style="width:13px;height:13px;border-radius:50%;background:#378add;border:2.5px solid #fff;box-shadow:0 0 0 2px #378add"></div>',iconSize:[13,13],iconAnchor:[6.5,6.5]})
+    }).addTo(map).bindTooltip('La tua posizione', {permanent:false});
+    fetchFlights();
+  }, err => {
+    alert('Impossibile ottenere la posizione: '+err.message);
+    document.getElementById('live-badge').textContent='errore GPS';
+    document.getElementById('live-badge').className='badge badge-err';
+  });
+});
+
+document.getElementById('fs-btn').addEventListener('click', () => {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen();
+    document.getElementById('fs-btn').innerHTML='<i class="ti ti-minimize" style="font-size:14px"></i> Esci da schermo intero';
+  } else {
+    document.exitFullscreen();
+    document.getElementById('fs-btn').innerHTML='<i class="ti ti-maximize" style="font-size:14px"></i> Schermo intero';
+  }
+});
+
+window.showDetail = showDetail;
+initMap();
+</script>
+</body>
+</html>
