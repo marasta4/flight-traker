@@ -274,7 +274,8 @@ function showDetail(icao) {
   const rows = [
     ['ICAO24', f.icao24||'—'],
     ['Callsign', cs],
-    ['Paese', f.origin_country||'—'],
+    ['Registrazione', f._reg||'—'],
+    ['Tipo aereo', f._type||'—'],
     ['Quota baro.', f.baro_altitude?Math.round(f.baro_altitude)+' m':'—'],
     ['Quota geo.', f.geo_altitude?Math.round(f.geo_altitude)+' m':'—'],
     ['Velocità', f.velocity?Math.round(f.velocity*3.6)+' km/h':'—'],
@@ -412,7 +413,7 @@ function renderTable() {
     const dist=f.latitude?Math.round(haversine(userLat,userLon,f.latitude,f.longitude))+' km':'—';
     return `<tr onclick="showDetail('${f.icao24}')">
       <td class="cs">${cs}</td>
-      <td>${f.origin_country||'—'}</td>
+      <td>${f._reg||f.origin_country||'—'}</td>
       <td class="alt-col">${f.baro_altitude?Math.round(f.baro_altitude)+' m':'—'}</td>
       <td class="spd-col">${f.velocity?Math.round(f.velocity*3.6)+' km/h':'—'}</td>
       <td>${f.true_track!==null?Math.round(f.true_track)+'°':'—'}</td>
@@ -433,49 +434,33 @@ function startCountdown(sec) {
   }, 1000);
 }
 
-// ============================================================
-// CONFIGURAZIONE PROXY
-// Dopo aver deployato il worker.js su Cloudflare Workers,
-// sostituisci l'URL qui sotto con il tuo URL worker.
-// Es: 'https://proud-firefly-d284.marastoni93.workers.dev'
-// ============================================================
-const WORKER_URL = 'https://proud-firefly-d284.marastoni93.workers.dev';
-
 async function fetchFlights() {
   if (!positionSet) return;
-  const deg = radiusKm/111;
-  const lamin=(userLat-deg).toFixed(4), lamax=(userLat+deg).toFixed(4);
-  const lomin=(userLon-deg/Math.cos(userLat*Math.PI/180)).toFixed(4), lomax=(userLon+deg/Math.cos(userLat*Math.PI/180)).toFixed(4);
-
-  // Prova prima il Worker Cloudflare, poi fallback ai proxy pubblici
-  const params = `lamin=${lamin}&lomin=${lomin}&lamax=${lamax}&lomax=${lomax}`;
-  const baseOpenSky = `https://opensky-network.org/api/states/all?${params}`;
-  const proxies = [
-    `${WORKER_URL}?${params}`,
-    `https://corsproxy.io/?${encodeURIComponent(baseOpenSky)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(baseOpenSky)}`,
-  ];
-
+  // adsb.lol: API gratuita, CORS aperto, no proxy necessario
+  const url = `https://api.adsb.lol/v2/lat/${userLat.toFixed(4)}/lon/${userLon.toFixed(4)}/dist/${radiusKm}`;
   document.getElementById('live-badge').textContent='aggiornamento…';
   document.getElementById('live-badge').className='badge badge-wait';
-
-  let data = null;
-  let lastError = '';
-  for (const url of proxies) {
-    try {
-      const res = await fetch(url, {signal: AbortSignal.timeout(12000)});
-      if (!res.ok) { lastError = 'HTTP '+res.status; continue; }
-      const text = await res.text();
-      if (!text || text.includes('allowlist')) { lastError = 'Bloccato'; continue; }
-      data = JSON.parse(text);
-      if (data) break;
-    } catch(e) { lastError = e.message; continue; }
-  }
-
   try {
-    if (!data) throw new Error(lastError || 'Tutti i proxy hanno fallito');
-    const fields=['icao24','callsign','origin_country','time_position','last_contact','longitude','latitude','baro_altitude','on_ground','velocity','true_track','vertical_rate','sensors','geo_altitude','squawk','spi','position_source'];
-    flights = (data.states||[]).map(s=>{const o={};fields.forEach((f,i)=>o[f]=s[i]);return o;}).filter(f=>f.latitude&&f.longitude&&!f.on_ground);
+    const res = await fetch(url, {signal: AbortSignal.timeout(15000)});
+    if (!res.ok) throw new Error('HTTP '+res.status);
+    const data = await res.json();
+    // adsb.lol restituisce { ac: [...] } con campi diversi da OpenSky
+    flights = (data.ac||[]).filter(f=>f.lat&&f.lon).map(f=>({
+      icao24: f.hex||'???',
+      callsign: (f.flight||f.r||'').trim(),
+      origin_country: f.r||'',
+      latitude: f.lat,
+      longitude: f.lon,
+      baro_altitude: f.alt_baro ? (f.alt_baro==='ground'?0:f.alt_baro*0.3048) : null,
+      geo_altitude: f.alt_geom ? f.alt_geom*0.3048 : null,
+      on_ground: f.alt_baro==='ground',
+      velocity: f.gs ? f.gs*0.514444 : null,
+      true_track: f.track||null,
+      vertical_rate: f.baro_rate ? f.baro_rate*0.00508 : null,
+      squawk: f.squawk||null,
+      _type: f.t||'',
+      _reg: f.r||'',
+    })).filter(f=>!f.on_ground);
     updateStats();
     renderMarkers();
     updateCharts();
